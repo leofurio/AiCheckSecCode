@@ -14,9 +14,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from . import __version__
 from .auditor import AuditConfig, RepoAuditor
 from .excel import write_excel_report
 from .git import GitCloneError
+from .rules import RULE_CATALOG
+
+RULE_COUNT = len(RULE_CATALOG)
 
 
 class AuditWebApp:
@@ -190,7 +194,7 @@ def render_report_page(report_id: str, source: str, report) -> str:
 <body>
   <div class="wrap">
     <section class="hero">
-      <span class="pill">Local web report</span>
+      <span class="pill">Local web report &middot; v{html.escape(__version__)} &middot; {RULE_COUNT} rules</span>
       <h1>Repository audit completed</h1>
       <p>Source: {html.escape(source)}</p>
       <div class="stats">
@@ -198,6 +202,7 @@ def render_report_page(report_id: str, source: str, report) -> str:
         <div class="stat"><strong>{report.stats.files_scanned}</strong>Files scanned</div>
         <div class="stat"><strong>{report.stats.directories_scanned}</strong>Directories scanned</div>
         <div class="stat"><strong>{len(report.findings)}</strong>Findings</div>
+        <div class="stat"><strong>{RULE_COUNT}</strong>Rules checked</div>
       </div>
       <div class="actions">
         <a class="btn" href="/download/{report_id}/audit-report.xlsx">Download Excel</a>
@@ -272,6 +277,15 @@ def render_index(error: str | None = None) -> str:
     }}
     h1 {{ margin: 0 0 12px; font-size: clamp(2rem, 5vw, 3.2rem); }}
     p {{ color: #5f6358; line-height: 1.5; }}
+    .meta {{
+      display: inline-block;
+      margin: 0 0 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(20, 83, 45, 0.1);
+      color: var(--accent);
+      font-size: 0.85rem;
+    }}
     form {{ display: grid; gap: 14px; margin-top: 22px; }}
     label {{ font-size: 0.95rem; }}
     input {{
@@ -301,6 +315,7 @@ def render_index(error: str | None = None) -> str:
 <body>
   <main class="card">
     <h1>AiCheckSecCode Web</h1>
+    <p class="meta">Versione {html.escape(__version__)} &middot; {RULE_COUNT} regole di sicurezza e hygiene</p>
     <p>Audit di repository Git o path locali dal browser, con report HTML immediato e file Excel scaricabile.</p>
     {error_html}
     <form method="post" action="/audit">
