@@ -13,7 +13,10 @@ Il progetto e pensato come base estendibile per controlli lightweight di code re
   - uso di `eval`, `exec`, `subprocess(..., shell=True)` e pattern simili;
   - URL HTTP non cifrati;
   - assenza di `SECURITY.md`;
-  - manifest di dipendenze senza configurazione di dependency scanning nota.
+  - manifest di dipendenze senza configurazione di dependency scanning nota;
+  - dipendenze dirette non pinnate e versioni legacy sotto soglie di sicurezza curate;
+  - TLS verification disabilitata, deserializzazione unsafe, primitive crittografiche deboli, CORS wildcard e sink di command injection;
+  - Dockerfile/container senza utente non-root, immagini `latest` o script installati via `curl | sh`.
 - Controlli di hygiene:
   - assenza di README, licenza, `.gitignore`, test o CI;
   - assenza di lock file per manifest comuni;
@@ -81,6 +84,7 @@ Le regole e il catalogo dei controlli esportati nel report Excel sono centralizz
 ## Limiti
 
 - I controlli sono euristici e possono generare falsi positivi o falsi negativi.
+- Le soglie sulle versioni delle librerie sono curate e conservative: non sostituiscono un feed CVE/SCA aggiornato in tempo reale.
 - I segreti rilevati devono essere ruotati: rimuoverli dal codice non basta se sono gia entrati nella history Git.
 - La scansione non esegue codice del repository target.
 - Questa sessione non puo pubblicare automaticamente il servizio su Internet senza credenziali o accesso a un hosting.

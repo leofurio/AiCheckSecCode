@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import re
-from collections.abc import Iterable
+import tomllib
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from .crawler import CrawledFile
@@ -27,6 +30,73 @@ _DANGEROUS_CODE_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     ("PY002", "Python shell command execution", re.compile(r"subprocess\.(Popen|call|run)\([^\n]*shell\s*=\s*True")),
     ("JS001", "JavaScript dynamic code execution", re.compile(r"\b(eval|Function)\s*\(")),
     ("SQL001", "Possible string-built SQL query", re.compile(r"(?i)(select|insert|update|delete).*(\+|%|\.format\(|f['\"])")),
+)
+
+_ENTERPRISE_SECURITY_PATTERNS: tuple[tuple[str, str, Severity, str, re.Pattern[str], str], ...] = (
+    (
+        "SEC007",
+        "TLS certificate verification disabled",
+        Severity.HIGH,
+        "Disabled TLS verification allows man-in-the-middle attacks.",
+        re.compile(r"(?i)(verify\s*=\s*False|rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['\"]?0|curl\s+[^\n]*-k\b|wget\s+[^\n]*--no-check-certificate)"),
+        "Keep certificate verification enabled and install trusted CA roots where needed.",
+    ),
+    (
+        "SEC008",
+        "Unsafe deserialization API",
+        Severity.HIGH,
+        "Unsafe deserialization can enable remote code execution with attacker-controlled data.",
+        re.compile(r"(?i)(pickle\.loads?\s*\(|yaml\.load\s*\(|marshal\.loads?\s*\(|ObjectInputStream\s*\(|BinaryFormatter\s*\()"),
+        "Use safe parsers such as yaml.safe_load and never deserialize untrusted input.",
+    ),
+    (
+        "SEC009",
+        "Weak cryptographic primitive",
+        Severity.MEDIUM,
+        "Weak hashes, ciphers, or modes are unsuitable for protecting sensitive data.",
+        re.compile(r"(?i)(hashlib\.(md5|sha1)\s*\(|createHash\(['\"](md5|sha1)['\"]\)|\b(MD5|SHA1|DES|RC4)\b|AES\/ECB|MODE_ECB)"),
+        "Use modern primitives such as SHA-256+, authenticated encryption, bcrypt/argon2, and vetted libraries.",
+    ),
+    (
+        "SEC010",
+        "Permissive CORS policy",
+        Severity.MEDIUM,
+        "Wildcard CORS can expose APIs to untrusted browser origins.",
+        re.compile(r"(?i)(Access-Control-Allow-Origin['\"]?\s*[:=]\s*['\"]\*|CORS\([^\n]*origins?\s*=\s*['\"]\*|cors\([^\n]*origin\s*:\s*['\"]\*)"),
+        "Restrict CORS origins to known trusted domains and avoid credentials with wildcard origins.",
+    ),
+    (
+        "SEC011",
+        "Potential command injection sink",
+        Severity.HIGH,
+        "Process execution built from strings can allow command injection.",
+        re.compile(r"(?i)(os\.system\s*\(|os\.popen\s*\(|child_process\.(exec|execSync)\s*\(|Runtime\.getRuntime\(\)\.exec\s*\()"),
+        "Pass arguments as arrays, validate inputs, and avoid shell interpolation.",
+    ),
+    (
+        "SEC012",
+        "Container image or package uses latest tag",
+        Severity.MEDIUM,
+        "Floating versions make deployments non-reproducible and can silently pull vulnerable releases.",
+        re.compile(r"(?i)^\s*(FROM\s+[^\s:]+\s*$|FROM\s+[^\s]+:latest\b|image\s*:\s*[^\s:]+:latest\b|version\s*[:=]\s*['\"]?latest['\"]?)"),
+        "Pin base images and packages to reviewed versions or immutable digests.",
+    ),
+    (
+        "SEC013",
+        "Dockerfile lacks explicit non-root user",
+        Severity.MEDIUM,
+        "Containers that run as root increase blast radius after compromise.",
+        re.compile(r"(?!)"),
+        "Set USER to a dedicated non-root account and minimize Linux capabilities.",
+    ),
+    (
+        "SEC014",
+        "Risky install script execution",
+        Severity.HIGH,
+        "Piping downloaded scripts directly to an interpreter bypasses review and integrity checks.",
+        re.compile(r"(?i)(curl\s+[^\n]*(\|\s*(sh|bash|python|ruby))|wget\s+[^\n]*(\|\s*(sh|bash|python|ruby)))"),
+        "Download, verify checksums/signatures, review, then execute trusted installation artifacts.",
+    ),
 )
 
 _DEPENDENCY_MANIFESTS = {
@@ -56,12 +126,45 @@ _LICENSE_NAMES = {"license", "license.md", "license.txt", "copying"}
 _TEST_HINTS = {"test", "tests", "spec", "specs", "__tests__"}
 _CI_HINTS = {".github/workflows", ".gitlab-ci.yml", "circle.yml", ".circleci", "azure-pipelines.yml"}
 _SAFE_HTTP_HOSTS = {"localhost", "127.0.0.1", "schemas.openxmlformats.org"}
+_PINNED_OPERATORS = ("==", "===")
+_FLOATING_VERSION_PREFIXES = ("^", "~", ">", "<", "*", "x", "X")
+
+# Conservative curated floor versions for dependencies with widely exploited or high-impact
+# historical vulnerabilities. This does not replace a live SCA feed; it catches risky legacy pins.
+_VULNERABLE_DEPENDENCY_FLOORS: dict[str, tuple[str, str]] = {
+    "django": ("4.2.11", "Python"),
+    "flask": ("2.3.3", "Python"),
+    "requests": ("2.32.0", "Python"),
+    "urllib3": ("2.0.7", "Python"),
+    "pyyaml": ("6.0.1", "Python"),
+    "cryptography": ("42.0.4", "Python"),
+    "pillow": ("10.3.0", "Python"),
+    "jinja2": ("3.1.4", "Python"),
+    "werkzeug": ("3.0.3", "Python"),
+    "lodash": ("4.17.21", "npm"),
+    "minimist": ("1.2.8", "npm"),
+    "axios": ("1.6.8", "npm"),
+    "express": ("4.18.2", "npm"),
+    "semver": ("7.5.2", "npm"),
+    "node-fetch": ("3.2.10", "npm"),
+    "log4j-core": ("2.17.1", "Maven"),
+}
 
 RULE_CATALOG: tuple[ControlResult, ...] = (
     ControlResult("SEC001", "Potential secret committed", Severity.CRITICAL, "security", "passed", recommendation="Rotate committed credentials and load secrets from a secret manager or environment variables."),
     ControlResult("SEC002", "Security policy present", Severity.MEDIUM, "security", "passed", recommendation="Add SECURITY.md with vulnerability reporting and supported versions."),
     ControlResult("SEC003", "Dependency scanner configured", Severity.MEDIUM, "security", "passed", recommendation="Enable Dependabot, Renovate, pip-audit, npm audit, or an equivalent dependency scanner."),
     ControlResult("SEC004", "External URLs use HTTPS", Severity.MEDIUM, "security", "passed", recommendation="Use HTTPS for external endpoints whenever possible."),
+    ControlResult("SEC005", "Dependencies are pinned", Severity.MEDIUM, "security", "passed", recommendation="Pin direct dependencies to exact reviewed versions and use lock files for applications."),
+    ControlResult("SEC006", "Known vulnerable dependency floor", Severity.HIGH, "security", "passed", recommendation="Upgrade flagged legacy dependencies and run a current SCA scanner before release."),
+    ControlResult("SEC007", "TLS verification enabled", Severity.HIGH, "security", "passed", recommendation="Keep TLS certificate verification enabled and trust explicit CA bundles when needed."),
+    ControlResult("SEC008", "Safe deserialization", Severity.HIGH, "security", "passed", recommendation="Use safe parsers and never deserialize untrusted data."),
+    ControlResult("SEC009", "Strong cryptography", Severity.MEDIUM, "security", "passed", recommendation="Replace weak hashes/ciphers with modern vetted primitives."),
+    ControlResult("SEC010", "CORS restricted", Severity.MEDIUM, "security", "passed", recommendation="Restrict browser origins to trusted domains."),
+    ControlResult("SEC011", "Command injection sinks avoided", Severity.HIGH, "security", "passed", recommendation="Avoid shell strings and pass validated arguments as arrays."),
+    ControlResult("SEC012", "No latest/floating runtime tags", Severity.MEDIUM, "security", "passed", recommendation="Pin runtime images and package versions to reviewed releases or digests."),
+    ControlResult("SEC013", "Container runs as non-root", Severity.MEDIUM, "security", "passed", recommendation="Set a non-root USER in Dockerfiles."),
+    ControlResult("SEC014", "Installer scripts verified", Severity.HIGH, "security", "passed", recommendation="Verify downloaded install scripts before execution."),
     ControlResult("PY001", "Python dynamic code execution", Severity.HIGH, "security", "passed", recommendation="Avoid eval/exec or strictly validate inputs before dynamic execution."),
     ControlResult("PY002", "Python shell command execution", Severity.HIGH, "security", "passed", recommendation="Avoid shell=True and pass command arguments as a sequence."),
     ControlResult("JS001", "JavaScript dynamic code execution", Severity.HIGH, "security", "passed", recommendation="Avoid eval/Function constructors or strictly validate inputs."),
@@ -78,6 +181,14 @@ RULE_CATALOG: tuple[ControlResult, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class DependencySpec:
+    name: str
+    version_spec: str
+    path: str
+    line: int | None
+
+
 class RuleEngine:
     """Runs security and hygiene rules over crawled files."""
 
@@ -85,6 +196,7 @@ class RuleEngine:
         file_list = list(files)
         findings: list[Finding] = []
         findings.extend(self._scan_file_content(file_list))
+        findings.extend(self._scan_dependencies(file_list))
         findings.extend(self._scan_repo_shape(root, file_list))
         return findings
 
@@ -114,6 +226,8 @@ class RuleEngine:
             findings.extend(self._find_dangerous_code(path, lines))
             findings.extend(self._find_todos(path, lines))
             findings.extend(self._find_insecure_urls(path, lines))
+            findings.extend(self._find_enterprise_security_patterns(path, lines))
+            findings.extend(self._find_dockerfile_hardening_issues(path, lines))
         return findings
 
     def _find_secrets(self, path: str, lines: list[str]) -> list[Finding]:
@@ -192,6 +306,89 @@ class RuleEngine:
                     )
         return findings
 
+    def _find_enterprise_security_patterns(self, path: str, lines: list[str]) -> list[Finding]:
+        findings: list[Finding] = []
+        for line_number, line in enumerate(lines, start=1):
+            for rule_id, title, severity, message, pattern, recommendation in _ENTERPRISE_SECURITY_PATTERNS:
+                if rule_id == "SEC013":
+                    continue
+                if pattern.search(line):
+                    findings.append(
+                        Finding(
+                            rule_id=rule_id,
+                            title=title,
+                            severity=severity,
+                            category="security",
+                            path=path,
+                            line=line_number,
+                            message=message,
+                            recommendation=recommendation,
+                        )
+                    )
+        return findings
+
+    def _find_dockerfile_hardening_issues(self, path: str, lines: list[str]) -> list[Finding]:
+        if Path(path).name.lower() not in {"dockerfile", "containerfile"} and not path.lower().endswith((".dockerfile", ".containerfile")):
+            return []
+        has_non_root_user = False
+        user_line: int | None = None
+        for line_number, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.upper().startswith("USER "):
+                user_line = line_number
+                user = stripped.split(None, 1)[1].strip().strip('"\'')
+                has_non_root_user = user not in {"0", "root"}
+        if has_non_root_user:
+            return []
+        return [
+            Finding(
+                rule_id="SEC013",
+                title="Dockerfile lacks explicit non-root user",
+                severity=Severity.MEDIUM,
+                category="security",
+                path=path,
+                line=user_line,
+                message="No explicit non-root USER directive was detected in this container build file.",
+                recommendation="Set USER to a dedicated non-root account and minimize Linux capabilities.",
+            )
+        ]
+
+    def _scan_dependencies(self, files: list[CrawledFile]) -> list[Finding]:
+        findings: list[Finding] = []
+        for dependency in _iter_dependencies(files):
+            normalized_name = _normalize_dependency_name(dependency.name)
+            if _is_unpinned_dependency(dependency.version_spec):
+                findings.append(
+                    Finding(
+                        rule_id="SEC005",
+                        title=f"Unpinned dependency: {dependency.name}",
+                        severity=Severity.MEDIUM,
+                        category="security",
+                        path=dependency.path,
+                        line=dependency.line,
+                        message=f"Dependency '{dependency.name}' uses non-exact version specifier '{dependency.version_spec}'.",
+                        recommendation="Pin direct dependencies to exact reviewed versions and use lock files for applications.",
+                    )
+                )
+            floor = _VULNERABLE_DEPENDENCY_FLOORS.get(normalized_name)
+            exact_version = _extract_exact_version(dependency.version_spec)
+            if floor and exact_version and _compare_versions(exact_version, floor[0]) < 0:
+                findings.append(
+                    Finding(
+                        rule_id="SEC006",
+                        title=f"Legacy vulnerable dependency floor: {dependency.name}",
+                        severity=Severity.HIGH,
+                        category="security",
+                        path=dependency.path,
+                        line=dependency.line,
+                        message=f"{floor[1]} dependency '{dependency.name}' is pinned to {exact_version}; recommended floor is {floor[0]} or newer.",
+                        recommendation="Upgrade flagged legacy dependencies and run a current SCA scanner before release.",
+                    )
+                )
+        return findings
+
     def _scan_repo_shape(self, root: Path, files: list[CrawledFile]) -> list[Finding]:
         paths = {file.relative_path.as_posix() for file in files}
         names = {file.relative_path.name.lower() for file in files}
@@ -237,6 +434,142 @@ class RuleEngine:
                 )
             )
         return findings
+
+
+def _iter_dependencies(files: list[CrawledFile]) -> Iterator[DependencySpec]:
+    for crawled in files:
+        if crawled.skipped_reason or crawled.text is None:
+            continue
+        path = crawled.relative_path.as_posix()
+        name = crawled.relative_path.name
+        if name == "requirements.txt":
+            yield from _parse_requirements(path, crawled.text)
+        elif name == "package.json":
+            yield from _parse_package_json(path, crawled.text)
+        elif name == "pyproject.toml":
+            yield from _parse_pyproject(path, crawled.text)
+        elif name == "pom.xml":
+            yield from _parse_pom_xml(path, crawled.text)
+
+
+def _parse_requirements(path: str, text: str) -> Iterator[DependencySpec]:
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.split("#", 1)[0].strip()
+        if not line or line.startswith(("-", "git+", "http://", "https://", ".", "/")):
+            continue
+        match = re.match(r"([A-Za-z0-9_.-]+)\s*(.*)", line)
+        if not match:
+            continue
+        yield DependencySpec(match.group(1), match.group(2).strip() or "unversioned", path, line_number)
+
+
+def _parse_package_json(path: str, text: str) -> Iterator[DependencySpec]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return
+    for section in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
+        dependencies = payload.get(section, {})
+        if not isinstance(dependencies, dict):
+            continue
+        for name, version_spec in dependencies.items():
+            if isinstance(name, str) and isinstance(version_spec, str):
+                yield DependencySpec(name, version_spec.strip(), path, _find_line_containing(text, f'"{name}"'))
+
+
+def _parse_pyproject(path: str, text: str) -> Iterator[DependencySpec]:
+    try:
+        payload = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return
+    project = payload.get("project", {})
+    if isinstance(project, dict):
+        for dependency in project.get("dependencies", []) or []:
+            if isinstance(dependency, str):
+                name, version_spec = _split_python_requirement(dependency)
+                yield DependencySpec(name, version_spec, path, _find_line_containing(text, dependency))
+        optional = project.get("optional-dependencies", {})
+        if isinstance(optional, dict):
+            for dependencies in optional.values():
+                if isinstance(dependencies, list):
+                    for dependency in dependencies:
+                        if isinstance(dependency, str):
+                            name, version_spec = _split_python_requirement(dependency)
+                            yield DependencySpec(name, version_spec, path, _find_line_containing(text, dependency))
+    poetry_dependencies = payload.get("tool", {}).get("poetry", {}).get("dependencies", {})
+    if isinstance(poetry_dependencies, dict):
+        for name, version_spec in poetry_dependencies.items():
+            if name.lower() == "python":
+                continue
+            if isinstance(version_spec, str):
+                yield DependencySpec(name, version_spec, path, _find_line_containing(text, name))
+            elif isinstance(version_spec, dict) and isinstance(version_spec.get("version"), str):
+                yield DependencySpec(name, version_spec["version"], path, _find_line_containing(text, name))
+
+
+def _parse_pom_xml(path: str, text: str) -> Iterator[DependencySpec]:
+    for match in re.finditer(r"<dependency>.*?<artifactId>(?P<name>[^<]+)</artifactId>.*?<version>(?P<version>[^<]+)</version>.*?</dependency>", text, re.DOTALL):
+        yield DependencySpec(match.group("name"), match.group("version").strip(), path, text[: match.start()].count("\n") + 1)
+
+
+def _split_python_requirement(dependency: str) -> tuple[str, str]:
+    match = re.match(r"\s*([A-Za-z0-9_.-]+)(?:\[[^\]]+\])?\s*(.*)", dependency)
+    if not match:
+        return dependency.strip(), "unversioned"
+    return match.group(1), match.group(2).strip() or "unversioned"
+
+
+def _is_unpinned_dependency(version_spec: str) -> bool:
+    spec = version_spec.strip()
+    if not spec or spec == "unversioned" or spec.lower() == "latest":
+        return True
+    if spec.startswith(_PINNED_OPERATORS):
+        return False
+    if re.fullmatch(r"v?\d+(?:\.\d+){1,3}(?:[-+][A-Za-z0-9_.-]+)?", spec):
+        return False
+    return spec.startswith(_FLOATING_VERSION_PREFIXES) or any(operator in spec for operator in (">", "<", "*", "~", "^", ","))
+
+
+def _extract_exact_version(version_spec: str) -> str | None:
+    spec = version_spec.strip()
+    if spec.startswith("==="):
+        return spec[3:].strip()
+    if spec.startswith("=="):
+        return spec[2:].strip()
+    if re.fullmatch(r"v?\d+(?:\.\d+){1,3}(?:[-+][A-Za-z0-9_.-]+)?", spec):
+        return spec.lstrip("v")
+    return None
+
+
+def _compare_versions(current: str, floor: str) -> int:
+    current_parts = _version_tuple(current)
+    floor_parts = _version_tuple(floor)
+    length = max(len(current_parts), len(floor_parts))
+    current_parts += (0,) * (length - len(current_parts))
+    floor_parts += (0,) * (length - len(floor_parts))
+    if current_parts < floor_parts:
+        return -1
+    if current_parts > floor_parts:
+        return 1
+    return 0
+
+
+def _version_tuple(version: str) -> tuple[int, ...]:
+    numeric = re.match(r"v?(\d+(?:\.\d+)*)", version.strip())
+    if not numeric:
+        return (0,)
+    return tuple(int(part) for part in numeric.group(1).split("."))
+
+
+def _normalize_dependency_name(name: str) -> str:
+    return name.strip().lower().replace("_", "-")
+
+
+def _find_line_containing(text: str, needle: str) -> int | None:
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if needle in line:
+            return line_number
+    return None
 
 
 def _repo_finding(rule_id: str, title: str, severity: Severity, recommendation: str) -> Finding:
