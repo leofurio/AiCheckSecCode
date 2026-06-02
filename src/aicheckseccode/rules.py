@@ -30,6 +30,13 @@ _DANGEROUS_CODE_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     ("PY002", "Python shell command execution", re.compile(r"subprocess\.(Popen|call|run)\([^\n]*shell\s*=\s*True")),
     ("JS001", "JavaScript dynamic code execution", re.compile(r"\b(eval|Function)\s*\(")),
     ("SQL001", "Possible string-built SQL query", re.compile(r"(?i)(select|insert|update|delete).*(\+|%|\.format\(|f['\"])")),
+    ("PHP001", "PHP dynamic code execution", re.compile(r"\b(eval|assert)\s*\(\s*\$")),
+    ("PHP002", "PHP shell command execution", re.compile(r"\b(system|shell_exec|passthru|exec|popen|proc_open)\s*\(")),
+    ("RB001", "Ruby dynamic code execution", re.compile(r"\b(eval|instance_eval|class_eval|module_eval)\s*[\(\"]")),
+    ("RB002", "Ruby shell command execution", re.compile(r"(`[^`]+`|\bsystem\s*\(|\bexec\s*\(|\bIO\.popen\s*\(|\bOpen3\.(popen|capture))")),
+    ("JAVA001", "Java reflection or dynamic class loading", re.compile(r"\b(Class\.forName|getDeclaredMethod|getDeclaredField|newInstance)\s*\(")),
+    ("CS001", "C# dynamic code or process execution", re.compile(r"\b(Process\.Start|Assembly\.Load|Activator\.CreateInstance|Type\.GetType)\s*\(")),
+    ("GO001", "Go shell command execution", re.compile(r'exec\.Command\s*\(\s*"(sh|bash|cmd|powershell)"')),
 )
 
 _ENTERPRISE_SECURITY_PATTERNS: tuple[tuple[str, str, Severity, str, re.Pattern[str], str], ...] = (
@@ -97,6 +104,62 @@ _ENTERPRISE_SECURITY_PATTERNS: tuple[tuple[str, str, Severity, str, re.Pattern[s
         re.compile(r"(?i)(curl\s+[^\n]*(\|\s*(sh|bash|python|ruby))|wget\s+[^\n]*(\|\s*(sh|bash|python|ruby)))"),
         "Download, verify checksums/signatures, review, then execute trusted installation artifacts.",
     ),
+    (
+        "SEC015",
+        "Potential path traversal",
+        Severity.HIGH,
+        "Unsanitized user input used to build file paths can allow directory traversal attacks.",
+        re.compile(r"(?i)(open\s*\(|file_get_contents\s*\(|readFile\s*\(|File\s*\().*\.\./|\.\./.*\$_(GET|POST|REQUEST|COOKIE)"),
+        "Canonicalize file paths with realpath/os.path.abspath and validate they are within the expected root.",
+    ),
+    (
+        "SEC016",
+        "Unsafe XML parsing (XXE risk)",
+        Severity.HIGH,
+        "Default XML parsers in many frameworks resolve external entities, enabling XXE attacks.",
+        re.compile(r"(?i)(DocumentBuilderFactory\.newInstance\(\)|XMLInputFactory\.newInstance\(\)|etree\.parse\s*\(|xml\.etree|libxml_disable_entity_loader\s*\(\s*false)"),
+        "Disable external entity resolution: set FEATURE_SECURE_PROCESSING or use defusedxml in Python.",
+    ),
+    (
+        "SEC017",
+        "Potential server-side request forgery (SSRF) sink",
+        Severity.HIGH,
+        "Fetching remote URLs derived from user input can allow SSRF attacks to internal services.",
+        re.compile(r"(?i)(requests\.get\s*\(\s*\$|requests\.post\s*\(\s*\$|urllib\.request\.urlopen\s*\(\s*\$|fetch\s*\(\s*(req\.|request\.|params\.|query\.)|file_get_contents\s*\(\s*\$_(GET|POST|REQUEST))"),
+        "Validate and allowlist URLs; never fetch arbitrary user-controlled URLs without strict filtering.",
+    ),
+    (
+        "SEC018",
+        "Hardcoded cryptographic key or IV",
+        Severity.HIGH,
+        "Hardcoded keys or initialization vectors make cryptographic protections trivially bypassable.",
+        re.compile(r"(?i)(aes_key|secret_key|encryption_key|iv\s*=|AES\.new\s*\([^,]+,\s*AES\.[A-Z]+,\s*b['\"])\s*[:=]\s*['\"][^'\"]{8,}['\"]"),
+        "Generate keys securely at runtime and store them in a key management service, never in source code.",
+    ),
+    (
+        "SEC019",
+        "JWT algorithm none or weak algorithm",
+        Severity.HIGH,
+        "Accepting 'none' as a JWT algorithm or using HS256 with untrusted keys bypasses signature verification.",
+        re.compile(r"(?i)(algorithm\s*=\s*['\"]none['\"]|algorithms\s*=\s*\[['\"]none['\"]\]|verify\s*=\s*False.*jwt|jwt\.decode.*verify.*False)"),
+        "Always specify a strong algorithm list (RS256/ES256) and never disable signature verification.",
+    ),
+    (
+        "SEC020",
+        "Potential open redirect",
+        Severity.MEDIUM,
+        "Redirecting to a URL derived from user input without validation can enable phishing.",
+        re.compile(r"(?i)(redirect\s*\(\s*request\.(args|params|GET|POST)|HttpResponseRedirect\s*\(\s*request\.(GET|POST)|res\.redirect\s*\(\s*req\.(query|body|params))"),
+        "Validate redirect targets against an allowlist of known-safe URLs or paths.",
+    ),
+    (
+        "SEC021",
+        "Server-side template injection sink",
+        Severity.HIGH,
+        "Rendering user-controlled strings as templates enables remote code execution.",
+        re.compile(r"(?i)(render_template_string\s*\(|Template\s*\(\s*(request\.|params\.|query\.|\$_(GET|POST))|Mustache\.render\s*\([^,]+,\s*(req\.|request\.)|\{\{.*user|\.render\s*\(\s*(params|request))"),
+        "Never pass user input directly to template engines; use static template files with context variables.",
+    ),
 )
 
 _DEPENDENCY_MANIFESTS = {
@@ -109,6 +172,7 @@ _DEPENDENCY_MANIFESTS = {
     "Cargo.lock",
     "go.sum",
     "Gemfile.lock",
+    "composer.lock",
 }
 
 _PACKAGE_MANIFESTS = {
@@ -118,6 +182,7 @@ _PACKAGE_MANIFESTS = {
     "Cargo.toml": {"Cargo.lock"},
     "go.mod": {"go.sum"},
     "Gemfile": {"Gemfile.lock"},
+    "composer.json": {"composer.lock"},
 }
 
 _SECURITY_DOC_NAMES = {"security.md", "security.txt"}
@@ -148,6 +213,40 @@ _VULNERABLE_DEPENDENCY_FLOORS: dict[str, tuple[str, str]] = {
     "semver": ("7.5.2", "npm"),
     "node-fetch": ("3.2.10", "npm"),
     "log4j-core": ("2.17.1", "Maven"),
+    # Python extras
+    "fastapi": ("0.109.1", "Python"),
+    "sqlalchemy": ("2.0.25", "Python"),
+    "aiohttp": ("3.9.4", "Python"),
+    "paramiko": ("3.4.0", "Python"),
+    "starlette": ("0.36.2", "Python"),
+    # npm extras
+    "jsonwebtoken": ("9.0.0", "npm"),
+    "passport": ("0.6.0", "npm"),
+    "multer": ("1.4.5-lts.1", "npm"),
+    "ws": ("8.17.1", "npm"),
+    "tar": ("6.2.1", "npm"),
+    # Ruby (Gem)
+    "rails": ("7.0.8.4", "Ruby"),
+    "rack": ("3.0.10", "Ruby"),
+    "devise": ("4.9.4", "Ruby"),
+    "carrierwave": ("3.0.7", "Ruby"),
+    "nokogiri": ("1.16.5", "Ruby"),
+    "activerecord": ("7.0.8.4", "Ruby"),
+    # PHP (Composer)
+    "laravel/framework": ("10.48.16", "PHP"),
+    "symfony/http-foundation": ("6.4.6", "PHP"),
+    "symfony/http-kernel": ("6.4.6", "PHP"),
+    "guzzlehttp/guzzle": ("7.8.1", "PHP"),
+    "monolog/monolog": ("3.5.0", "PHP"),
+    # Java/Maven extras
+    "spring-core": ("6.1.6", "Maven"),
+    "spring-webmvc": ("6.1.6", "Maven"),
+    "commons-collections": ("3.2.2", "Maven"),
+    "jackson-databind": ("2.17.0", "Maven"),
+    "netty-all": ("4.1.108.Final", "Maven"),
+    # Go modules
+    "golang.org/x/net": ("0.23.0", "Go"),
+    "golang.org/x/crypto": ("0.22.0", "Go"),
 }
 
 RULE_CATALOG: tuple[ControlResult, ...] = (
@@ -169,6 +268,20 @@ RULE_CATALOG: tuple[ControlResult, ...] = (
     ControlResult("PY002", "Python shell command execution", Severity.HIGH, "security", "passed", recommendation="Avoid shell=True and pass command arguments as a sequence."),
     ControlResult("JS001", "JavaScript dynamic code execution", Severity.HIGH, "security", "passed", recommendation="Avoid eval/Function constructors or strictly validate inputs."),
     ControlResult("SQL001", "Possible string-built SQL query", Severity.HIGH, "security", "passed", recommendation="Use parameterized queries or ORM-safe APIs."),
+    ControlResult("PHP001", "PHP dynamic code execution", Severity.HIGH, "security", "passed", recommendation="Avoid eval/assert with user input; use static logic instead."),
+    ControlResult("PHP002", "PHP shell command execution", Severity.HIGH, "security", "passed", recommendation="Avoid shell execution functions and use safer library APIs with validated inputs."),
+    ControlResult("RB001", "Ruby dynamic code execution", Severity.HIGH, "security", "passed", recommendation="Avoid eval variants or strictly validate inputs before dynamic execution."),
+    ControlResult("RB002", "Ruby shell command execution", Severity.HIGH, "security", "passed", recommendation="Avoid backticks and system/exec; use libraries with structured argument lists."),
+    ControlResult("JAVA001", "Java reflection or dynamic class loading", Severity.HIGH, "security", "passed", recommendation="Avoid dynamic class loading with user-controlled input; use explicit allowlists."),
+    ControlResult("CS001", "C# dynamic code or process execution", Severity.HIGH, "security", "passed", recommendation="Avoid Process.Start with shell and Assembly.Load with untrusted input."),
+    ControlResult("GO001", "Go shell command execution", Severity.HIGH, "security", "passed", recommendation="Pass command arguments as separate strings instead of invoking sh/bash."),
+    ControlResult("SEC015", "Path traversal prevented", Severity.HIGH, "security", "passed", recommendation="Canonicalize and validate file paths before use."),
+    ControlResult("SEC016", "Safe XML parsing", Severity.HIGH, "security", "passed", recommendation="Disable external entity resolution in XML parsers."),
+    ControlResult("SEC017", "SSRF sinks avoided", Severity.HIGH, "security", "passed", recommendation="Allowlist URLs before fetching user-controlled remote resources."),
+    ControlResult("SEC018", "No hardcoded cryptographic keys", Severity.HIGH, "security", "passed", recommendation="Generate keys at runtime and store them in a KMS."),
+    ControlResult("SEC019", "JWT algorithm validated", Severity.HIGH, "security", "passed", recommendation="Always specify a strong algorithm and never disable JWT verification."),
+    ControlResult("SEC020", "Open redirect prevented", Severity.MEDIUM, "security", "passed", recommendation="Validate redirect targets against an allowlist."),
+    ControlResult("SEC021", "Server-side template injection avoided", Severity.HIGH, "security", "passed", recommendation="Never render user input as a template string."),
     ControlResult("HYG001", "README present", Severity.MEDIUM, "hygiene", "passed", recommendation="Add a README with setup, usage, testing, and security notes."),
     ControlResult("HYG002", "License present", Severity.LOW, "hygiene", "passed", recommendation="Add a license file so reuse terms are explicit."),
     ControlResult("HYG003", ".gitignore present", Severity.LOW, "hygiene", "passed", recommendation="Add a .gitignore tailored to the project stack."),
@@ -450,6 +563,12 @@ def _iter_dependencies(files: list[CrawledFile]) -> Iterator[DependencySpec]:
             yield from _parse_pyproject(path, crawled.text)
         elif name == "pom.xml":
             yield from _parse_pom_xml(path, crawled.text)
+        elif name == "composer.json":
+            yield from _parse_composer_json(path, crawled.text)
+        elif name == "Gemfile":
+            yield from _parse_gemfile(path, crawled.text)
+        elif name == "go.mod":
+            yield from _parse_go_mod(path, crawled.text)
 
 
 def _parse_requirements(path: str, text: str) -> Iterator[DependencySpec]:
@@ -510,6 +629,41 @@ def _parse_pyproject(path: str, text: str) -> Iterator[DependencySpec]:
 def _parse_pom_xml(path: str, text: str) -> Iterator[DependencySpec]:
     for match in re.finditer(r"<dependency>.*?<artifactId>(?P<name>[^<]+)</artifactId>.*?<version>(?P<version>[^<]+)</version>.*?</dependency>", text, re.DOTALL):
         yield DependencySpec(match.group("name"), match.group("version").strip(), path, text[: match.start()].count("\n") + 1)
+
+
+def _parse_composer_json(path: str, text: str) -> Iterator[DependencySpec]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return
+    for section in ("require", "require-dev"):
+        deps = payload.get(section, {})
+        if not isinstance(deps, dict):
+            continue
+        for name, version_spec in deps.items():
+            if isinstance(name, str) and name != "php" and isinstance(version_spec, str):
+                yield DependencySpec(name, version_spec.strip(), path, _find_line_containing(text, f'"{name}"'))
+
+
+def _parse_gemfile(path: str, text: str) -> Iterator[DependencySpec]:
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.split("#", 1)[0].strip()
+        match = re.match(r"""gem\s+['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]""", line)
+        if match:
+            yield DependencySpec(match.group(1), match.group(2).strip(), path, line_number)
+        elif re.match(r"""gem\s+['"]([^'"]+)['"]""", line):
+            name = re.match(r"""gem\s+['"]([^'"]+)['"]""", line).group(1)
+            yield DependencySpec(name, "unversioned", path, line_number)
+
+
+def _parse_go_mod(path: str, text: str) -> Iterator[DependencySpec]:
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        match = re.match(r"^require\s+(\S+)\s+(\S+)", line) or re.match(r"^\t?(\S+)\s+(v\S+)$", line)
+        if match:
+            name, version = match.group(1), match.group(2)
+            if not name.startswith("//") and name != "require":
+                yield DependencySpec(name, version.strip(), path, line_number)
 
 
 def _split_python_requirement(dependency: str) -> tuple[str, str]:
