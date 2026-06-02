@@ -43,7 +43,7 @@ _DEPENDENCY_MANIFESTS = {
 
 _PACKAGE_MANIFESTS = {
     "package.json": {"package-lock.json", "pnpm-lock.yaml", "yarn.lock"},
-    "pyproject.toml": {"poetry.lock", "requirements.txt"},
+    "pyproject.toml": {"poetry.lock", "Pipfile.lock", "uv.lock"},
     "Pipfile": {"Pipfile.lock"},
     "Cargo.toml": {"Cargo.lock"},
     "go.mod": {"go.sum"},
@@ -55,6 +55,7 @@ _README_NAMES = {"readme", "readme.md", "readme.rst", "readme.txt"}
 _LICENSE_NAMES = {"license", "license.md", "license.txt", "copying"}
 _TEST_HINTS = {"test", "tests", "spec", "specs", "__tests__"}
 _CI_HINTS = {".github/workflows", ".gitlab-ci.yml", "circle.yml", ".circleci", "azure-pipelines.yml"}
+_SAFE_HTTP_HOSTS = {"localhost", "127.0.0.1", "schemas.openxmlformats.org"}
 
 RULE_CATALOG: tuple[ControlResult, ...] = (
     ControlResult("SEC001", "Potential secret committed", Severity.CRITICAL, "security", "passed", recommendation="Rotate committed credentials and load secrets from a secret manager or environment variables."),
@@ -73,7 +74,7 @@ RULE_CATALOG: tuple[ControlResult, ...] = (
     ControlResult("HYG006", "No large source files skipped", Severity.LOW, "hygiene", "passed", recommendation="Keep large generated artifacts out of source control or raise the scan limit deliberately."),
     ControlResult("HYG007", "CI configuration detected", Severity.LOW, "hygiene", "passed", recommendation="Add CI to run tests, linting, and security checks on every change."),
     ControlResult("HYG008", "Dependency lock files present", Severity.MEDIUM, "hygiene", "passed", recommendation="Commit lock files for applications so builds are reproducible."),
-    ControlResult("HYG009", "Repository history clone mode reviewed", Severity.INFO, "hygiene", "passed", recommendation="Use --depth 1 for large repositories when history is not needed."),
+    ControlResult("HYG009", "Repository history clone mode reviewed", Severity.INFO, "hygiene", "info", recommendation="Use --depth 1 for large repositories when history is not needed."),
 )
 
 
@@ -174,19 +175,21 @@ class RuleEngine:
     def _find_insecure_urls(self, path: str, lines: list[str]) -> list[Finding]:
         findings: list[Finding] = []
         for line_number, line in enumerate(lines, start=1):
-            if "http://" in line and "localhost" not in line and "127.0.0.1" not in line:
-                findings.append(
-                    Finding(
-                        rule_id="SEC004",
-                        title="Plain HTTP URL",
-                        severity=Severity.MEDIUM,
-                        category="security",
-                        path=path,
-                        line=line_number,
-                        message="Plain HTTP can expose traffic to interception or tampering.",
-                        recommendation="Use HTTPS for external endpoints whenever possible.",
+            for url in re.findall(r"http://[^\s'\"<>()]+", line):
+                host = re.sub(r"^http://", "", url).split("/", 1)[0].lower()
+                if host not in _SAFE_HTTP_HOSTS:
+                    findings.append(
+                        Finding(
+                            rule_id="SEC004",
+                            title="Plain HTTP URL",
+                            severity=Severity.MEDIUM,
+                            category="security",
+                            path=path,
+                            line=line_number,
+                            message="Plain HTTP can expose traffic to interception or tampering.",
+                            recommendation="Use HTTPS for external endpoints whenever possible.",
+                        )
                     )
-                )
         return findings
 
     def _scan_repo_shape(self, root: Path, files: list[CrawledFile]) -> list[Finding]:
@@ -223,7 +226,6 @@ class RuleEngine:
                 )
 
         if (root / ".git").exists() and not (root / ".git" / "shallow").exists():
-            # Informational only: the crawler works on complete clones, but shallow clones are faster for very large repos.
             findings.append(
                 Finding(
                     rule_id="HYG009",

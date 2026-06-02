@@ -39,6 +39,4 @@ def format_text(report: AuditReport) -> str:
         lines.append(f"  [{finding.severity.value.upper()}] {finding.rule_id} {finding.title}{location}")
         if finding.message:
             lines.append(f"    {finding.message}")
-        if finding.recommendation:
-            lines.append(f"    Recommendation: {finding.recommendation}")
     return "\n".join(lines)

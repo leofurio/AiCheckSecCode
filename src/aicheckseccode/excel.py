@@ -128,8 +128,8 @@ def _content_types(sheet_count: int) -> str:
         'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
         '<Override PartName="/xl/styles.xml" '
         'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
-        f'{sheet_overrides}'
-        '</Types>'
+        f"{sheet_overrides}"
+        "</Types>"
     )
 
 
@@ -140,11 +140,11 @@ def _root_relationships() -> str:
         '<Relationship Id="rId1" '
         'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
         'Target="xl/workbook.xml"/>'
-        '</Relationships>'
+        "</Relationships>"
     )
 
 
-def _workbook(sheets: Sequence[ tuple[str, list[list[_CellValue]]] ]) -> str:
+def _workbook(sheets: Sequence[tuple[str, list[list[_CellValue]]]]) -> str:
     sheet_entries = "".join(
         f'<sheet name="{escape(name)}" sheetId="{index}" r:id="rId{index}"/>'
         for index, (name, _) in enumerate(sheets, start=1)
@@ -153,12 +153,12 @@ def _workbook(sheets: Sequence[ tuple[str, list[list[_CellValue]]] ]) -> str:
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-        f'<sheets>{sheet_entries}</sheets>'
-        '</workbook>'
+        f"<sheets>{sheet_entries}</sheets>"
+        "</workbook>"
     )
 
 
-def _workbook_relationships(sheets: Sequence[ tuple[str, list[list[_CellValue]]] ]) -> str:
+def _workbook_relationships(sheets: Sequence[tuple[str, list[list[_CellValue]]]]) -> str:
     relationships = "".join(
         f'<Relationship Id="rId{index}" '
         'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
@@ -173,8 +173,8 @@ def _workbook_relationships(sheets: Sequence[ tuple[str, list[list[_CellValue]]]
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        f'{relationships}'
-        '</Relationships>'
+        f"{relationships}"
+        "</Relationships>"
     )
 
 
@@ -187,7 +187,7 @@ def _styles() -> str:
         '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
         '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
         '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>'
-        '</styleSheet>'
+        "</styleSheet>"
     )
 
 
@@ -196,8 +196,8 @@ def _worksheet(rows: Sequence[Sequence[_CellValue]]) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        f'<sheetData>{row_xml}</sheetData>'
-        '</worksheet>'
+        f"<sheetData>{row_xml}</sheetData>"
+        "</worksheet>"
     )
 
 
@@ -211,9 +211,9 @@ def _cell(row_index: int, col_index: int, value: _CellValue) -> str:
         value = ""
     reference = f"{_column_name(col_index)}{row_index}"
     style = ' s="1"' if row_index == 1 else ""
-    if isinstance(value, int | float):
+    if isinstance(value, (int, float)):
         return f'<c r="{reference}"{style}><v>{value}</v></c>'
-    text = escape(str(value), {'"': '&quot;'})
+    text = escape(str(value), {'"': "&quot;"})
     return f'<c r="{reference}" t="inlineStr"{style}><is><t>{text}</t></is></c>'
 
 

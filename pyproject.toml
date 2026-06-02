@@ -22,6 +22,7 @@ classifiers = [
 
 [project.scripts]
 aicheckseccode = "aicheckseccode.cli:main"
+aicheckseccode-web = "aicheckseccode.web:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

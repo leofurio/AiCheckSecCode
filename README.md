@@ -1,10 +1,10 @@
 # AiCheckSecCode
 
-AiCheckSecCode è un crawler CLI che riceve il link di un repository Git, lo clona in modo temporaneo e ne valuta la qualità in termini di **sicurezza** e **hygiene** del progetto.
+AiCheckSecCode e un crawler CLI/Web che riceve il link di un repository Git, lo clona in modo temporaneo e ne valuta la qualita in termini di sicurezza e hygiene del progetto.
 
-Il progetto è pensato come base estendibile per controlli lightweight di code review automatica: non sostituisce SAST/DAST professionali, ma aiuta a individuare segnali rapidi di rischio e debito tecnico.
+Il progetto e pensato come base estendibile per controlli lightweight di code review automatica: non sostituisce SAST/DAST professionali, ma aiuta a individuare segnali rapidi di rischio e debito tecnico.
 
-## Funzionalità
+## Funzionalita
 
 - Clonazione di repository remoti Git con clone shallow (`--depth 1`) o scansione di path locali.
 - Crawler del filesystem con esclusione di directory pesanti come `.git`, `node_modules`, `vendor`, `target` e ambienti virtuali.
@@ -21,6 +21,7 @@ Il progetto è pensato come base estendibile per controlli lightweight di code r
   - marker `TODO`, `FIXME` o `HACK`.
 - Output in formato testo o JSON.
 - Esportazione Excel `.xlsx` con dettaglio dei controlli eseguiti, stato e findings.
+- Interfaccia web locale con report navigabile e file Excel scaricabile dal browser.
 - Score finale 0-100 e supporto `--fail-under` per pipeline CI.
 
 ## Installazione in sviluppo
@@ -29,7 +30,7 @@ Il progetto è pensato come base estendibile per controlli lightweight di code r
 python -m pip install -e .
 ```
 
-## Uso
+## Uso CLI
 
 ```bash
 aicheckseccode https://github.com/owner/repo.git
@@ -59,16 +60,27 @@ Scansione di una repository locale:
 aicheckseccode /path/to/repository --format text
 ```
 
+## Uso Web
+
+Avvia il server locale:
+
+```bash
+aicheckseccode-web --host 127.0.0.1 --port 8000
+```
+
+Poi apri `http://127.0.0.1:8000`, inserisci il path o l'URL Git del repository e scarica il report Excel generato dalla pagina.
+
 ## Estendere le regole
 
 Le regole e il catalogo dei controlli esportati nel report Excel sono centralizzati in `src/aicheckseccode/rules.py`. Per aggiungere un nuovo controllo:
 
 1. aggiungi una funzione privata nella classe `RuleEngine` oppure un nuovo pattern;
-2. restituisci uno o più oggetti `Finding`;
+2. restituisci uno o piu oggetti `Finding`;
 3. copri il comportamento con test in `tests/`.
 
 ## Limiti
 
 - I controlli sono euristici e possono generare falsi positivi o falsi negativi.
-- I segreti rilevati devono essere ruotati: rimuoverli dal codice non basta se sono già entrati nella history Git.
+- I segreti rilevati devono essere ruotati: rimuoverli dal codice non basta se sono gia entrati nella history Git.
 - La scansione non esegue codice del repository target.
+- Questa sessione non puo pubblicare automaticamente il servizio su Internet senza credenziali o accesso a un hosting.

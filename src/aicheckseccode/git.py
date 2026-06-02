@@ -12,6 +12,15 @@ class GitCloneError(RuntimeError):
     """Raised when a repository cannot be cloned."""
 
 
+def _temporary_clone_directory() -> TemporaryDirectory[str]:
+    try:
+        return TemporaryDirectory(prefix="aicheckseccode-")
+    except PermissionError:
+        fallback_root = Path.cwd() / ".aicheckseccode-tmp"
+        fallback_root.mkdir(parents=True, exist_ok=True)
+        return TemporaryDirectory(prefix="aicheckseccode-", dir=fallback_root)
+
+
 @contextmanager
 def clone_repository(source: str, keep_path: Path | None = None):
     """Clone a Git repository or reuse a local path.
@@ -31,7 +40,7 @@ def clone_repository(source: str, keep_path: Path | None = None):
         destination = keep_path
         temp_dir: TemporaryDirectory[str] | None = None
     else:
-        temp_dir = TemporaryDirectory(prefix="aicheckseccode-")
+        temp_dir = _temporary_clone_directory()
         destination = Path(temp_dir.name) / "repo"
 
     try:

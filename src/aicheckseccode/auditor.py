@@ -58,7 +58,7 @@ def _score(findings) -> int:
         Severity.LOW: 3,
         Severity.INFO: 1,
     }
-    score = 100 - sum(penalties[finding.severity] for finding in findings)
+    score = 100 - sum(penalties[finding.severity] for finding in findings if finding.rule_id != "HYG009")
     return max(0, min(100, score))
 
 
@@ -75,6 +75,8 @@ def _severity_rank(severity: Severity) -> int:
 def _find_findings_by_rule(findings) -> dict[str, int]:
     counts: dict[str, int] = {}
     for finding in findings:
+        if finding.rule_id == "HYG009":
+            continue
         counts[finding.rule_id] = counts.get(finding.rule_id, 0) + 1
     return counts
 
@@ -83,13 +85,14 @@ def _build_control_results(findings_by_rule: dict[str, int]) -> list[ControlResu
     controls: list[ControlResult] = []
     for control in RULE_CATALOG:
         findings_count = findings_by_rule.get(control.rule_id, 0)
+        status = control.status if control.rule_id == "HYG009" else ("failed" if findings_count else "passed")
         controls.append(
             ControlResult(
                 rule_id=control.rule_id,
                 title=control.title,
                 severity=control.severity,
                 category=control.category,
-                status="failed" if findings_count else "passed",
+                status=status,
                 findings_count=findings_count,
                 recommendation=control.recommendation,
             )
