@@ -20,6 +20,7 @@ Il progetto è pensato come base estendibile per controlli lightweight di code r
   - file troppo grandi esclusi dalla scansione;
   - marker `TODO`, `FIXME` o `HACK`.
 - Output in formato testo o JSON.
+- Esportazione Excel `.xlsx` con dettaglio dei controlli eseguiti, stato e findings.
 - Score finale 0-100 e supporto `--fail-under` per pipeline CI.
 
 ## Installazione in sviluppo
@@ -40,10 +41,16 @@ Output JSON:
 aicheckseccode https://github.com/owner/repo.git --format json
 ```
 
-Uso in CI con soglia minima:
+Generazione del file Excel con elenco dettagliato dei controlli e risultati:
 
 ```bash
-aicheckseccode https://github.com/owner/repo.git --fail-under 80
+aicheckseccode https://github.com/owner/repo.git --excel report.xlsx
+```
+
+Uso in CI con soglia minima e artifact Excel:
+
+```bash
+aicheckseccode https://github.com/owner/repo.git --fail-under 80 --excel report.xlsx
 ```
 
 Scansione di una repository locale:
@@ -54,7 +61,7 @@ aicheckseccode /path/to/repository --format text
 
 ## Estendere le regole
 
-Le regole sono centralizzate in `src/aicheckseccode/rules.py`. Per aggiungere un nuovo controllo:
+Le regole e il catalogo dei controlli esportati nel report Excel sono centralizzati in `src/aicheckseccode/rules.py`. Per aggiungere un nuovo controllo:
 
 1. aggiungi una funzione privata nella classe `RuleEngine` oppure un nuovo pattern;
 2. restituisci uno o più oggetti `Finding`;

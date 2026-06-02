@@ -7,8 +7,8 @@ from pathlib import Path
 
 from .crawler import CrawlOptions, RepositoryCrawler
 from .git import clone_repository
-from .models import AuditReport, RepoStats, Severity
-from .rules import RuleEngine
+from .models import AuditReport, ControlResult, RepoStats, Severity
+from .rules import RULE_CATALOG, RuleEngine
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,7 @@ class RepoAuditor:
                     stats.add_file(crawled_file.relative_path, crawled_file.size)
 
             findings = self.rule_engine.run(repo_path, crawled_files)
+            controls = _build_control_results(_find_findings_by_rule(findings))
             score = _score(findings)
             return AuditReport(
                 repository=repo_path.name,
@@ -45,6 +46,7 @@ class RepoAuditor:
                 score=score,
                 stats=stats,
                 findings=sorted(findings, key=lambda item: (_severity_rank(item.severity), item.rule_id, item.path or ""), reverse=True),
+                controls=controls,
             )
 
 
@@ -68,3 +70,28 @@ def _severity_rank(severity: Severity) -> int:
         Severity.LOW: 2,
         Severity.INFO: 1,
     }[severity]
+
+
+def _find_findings_by_rule(findings) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for finding in findings:
+        counts[finding.rule_id] = counts.get(finding.rule_id, 0) + 1
+    return counts
+
+
+def _build_control_results(findings_by_rule: dict[str, int]) -> list[ControlResult]:
+    controls: list[ControlResult] = []
+    for control in RULE_CATALOG:
+        findings_count = findings_by_rule.get(control.rule_id, 0)
+        controls.append(
+            ControlResult(
+                rule_id=control.rule_id,
+                title=control.title,
+                severity=control.severity,
+                category=control.category,
+                status="failed" if findings_count else "passed",
+                findings_count=findings_count,
+                recommendation=control.recommendation,
+            )
+        )
+    return sorted(controls, key=lambda item: (_severity_rank(item.severity), item.rule_id), reverse=True)

@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from .crawler import CrawledFile
-from .models import Finding, Severity
+from .models import ControlResult, Finding, Severity
 
 _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
@@ -55,6 +55,26 @@ _README_NAMES = {"readme", "readme.md", "readme.rst", "readme.txt"}
 _LICENSE_NAMES = {"license", "license.md", "license.txt", "copying"}
 _TEST_HINTS = {"test", "tests", "spec", "specs", "__tests__"}
 _CI_HINTS = {".github/workflows", ".gitlab-ci.yml", "circle.yml", ".circleci", "azure-pipelines.yml"}
+
+RULE_CATALOG: tuple[ControlResult, ...] = (
+    ControlResult("SEC001", "Potential secret committed", Severity.CRITICAL, "security", "passed", recommendation="Rotate committed credentials and load secrets from a secret manager or environment variables."),
+    ControlResult("SEC002", "Security policy present", Severity.MEDIUM, "security", "passed", recommendation="Add SECURITY.md with vulnerability reporting and supported versions."),
+    ControlResult("SEC003", "Dependency scanner configured", Severity.MEDIUM, "security", "passed", recommendation="Enable Dependabot, Renovate, pip-audit, npm audit, or an equivalent dependency scanner."),
+    ControlResult("SEC004", "External URLs use HTTPS", Severity.MEDIUM, "security", "passed", recommendation="Use HTTPS for external endpoints whenever possible."),
+    ControlResult("PY001", "Python dynamic code execution", Severity.HIGH, "security", "passed", recommendation="Avoid eval/exec or strictly validate inputs before dynamic execution."),
+    ControlResult("PY002", "Python shell command execution", Severity.HIGH, "security", "passed", recommendation="Avoid shell=True and pass command arguments as a sequence."),
+    ControlResult("JS001", "JavaScript dynamic code execution", Severity.HIGH, "security", "passed", recommendation="Avoid eval/Function constructors or strictly validate inputs."),
+    ControlResult("SQL001", "Possible string-built SQL query", Severity.HIGH, "security", "passed", recommendation="Use parameterized queries or ORM-safe APIs."),
+    ControlResult("HYG001", "README present", Severity.MEDIUM, "hygiene", "passed", recommendation="Add a README with setup, usage, testing, and security notes."),
+    ControlResult("HYG002", "License present", Severity.LOW, "hygiene", "passed", recommendation="Add a license file so reuse terms are explicit."),
+    ControlResult("HYG003", ".gitignore present", Severity.LOW, "hygiene", "passed", recommendation="Add a .gitignore tailored to the project stack."),
+    ControlResult("HYG004", "Tests detected", Severity.MEDIUM, "hygiene", "passed", recommendation="Add automated tests and include the test command in documentation."),
+    ControlResult("HYG005", "No unresolved maintenance markers", Severity.INFO, "hygiene", "passed", recommendation="Track maintenance debt in issues or resolve markers before release."),
+    ControlResult("HYG006", "No large source files skipped", Severity.LOW, "hygiene", "passed", recommendation="Keep large generated artifacts out of source control or raise the scan limit deliberately."),
+    ControlResult("HYG007", "CI configuration detected", Severity.LOW, "hygiene", "passed", recommendation="Add CI to run tests, linting, and security checks on every change."),
+    ControlResult("HYG008", "Dependency lock files present", Severity.MEDIUM, "hygiene", "passed", recommendation="Commit lock files for applications so builds are reproducible."),
+    ControlResult("HYG009", "Repository history clone mode reviewed", Severity.INFO, "hygiene", "passed", recommendation="Use --depth 1 for large repositories when history is not needed."),
+)
 
 
 class RuleEngine:

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .auditor import AuditConfig, RepoAuditor
+from .excel import write_excel_report
 from .formatters import format_json, format_text
 from .git import GitCloneError
 
@@ -35,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional destination path where the cloned repository should be kept",
     )
     parser.add_argument(
+        "--excel",
+        type=Path,
+        help="Write a detailed Excel .xlsx report to this path",
+    )
+    parser.add_argument(
         "--fail-under",
         type=int,
         metavar="SCORE",
@@ -54,8 +60,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Unable to clone repository: {exc}", file=sys.stderr)
         return 1
 
+    if args.excel:
+        write_excel_report(report, args.excel)
+
     output = format_json(report) if args.format == "json" else format_text(report)
     print(output)
+
+    if args.excel:
+        print(f"Excel report written to: {args.excel}", file=sys.stderr)
 
     if args.fail_under is not None and report.score < args.fail_under:
         return 2

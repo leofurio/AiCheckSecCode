@@ -37,6 +37,24 @@ class Finding:
         return data
 
 
+@dataclass(frozen=True)
+class ControlResult:
+    """Execution result for a single audit control."""
+
+    rule_id: str
+    title: str
+    severity: Severity
+    category: str
+    status: str
+    findings_count: int = 0
+    recommendation: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["severity"] = self.severity.value
+        return data
+
+
 @dataclass
 class RepoStats:
     """Summary statistics gathered while crawling a repository."""
@@ -66,6 +84,7 @@ class AuditReport:
     score: int
     stats: RepoStats
     findings: list[Finding]
+    controls: list[ControlResult] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -73,5 +92,6 @@ class AuditReport:
             "source": self.source,
             "score": self.score,
             "stats": self.stats.to_dict(),
+            "controls": [control.to_dict() for control in self.controls],
             "findings": [finding.to_dict() for finding in self.findings],
         }
