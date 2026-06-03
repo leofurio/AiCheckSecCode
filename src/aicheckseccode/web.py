@@ -72,15 +72,32 @@ def _findings_table(findings: list, empty_msg: str = "No findings detected.") ->
     return rows
 
 
-def _findings_panel(title: str, subtitle: str, findings: list, accent_css: str = "") -> str:
+def _tool_status_badge(status: str) -> str:
+    """Render a small status badge for a tool's run status."""
+    if status == "ok":
+        return '<span class="status status-passed">ran</span>'
+    if status == "not_found":
+        return '<span class="status status-info">not installed</span>'
+    return f'<span class="status status-failed" title="{html.escape(status[6:])}">error</span>'
+
+
+def _findings_panel(title: str, subtitle: str, findings: list, tool_status: str = "") -> str:
     rows = _findings_table(findings)
     count = len(findings)
     count_badge = f'<span class="count-badge">{count}</span>' if count else '<span class="count-badge count-zero">0</span>'
+    status_badge = f" {_tool_status_badge(tool_status)}" if tool_status else ""
+    not_installed_note = ""
+    if tool_status == "not_found":
+        install_cmd = "pip install semgrep" if "emgrep" in title else "see https://aquasecurity.github.io/trivy"
+        not_installed_note = f'<p class="panel-note">Tool not available — install with: <code>{html.escape(install_cmd)}</code></p>'
+    elif tool_status.startswith("error:"):
+        not_installed_note = f'<p class="panel-note panel-note-error">Scan error: {html.escape(tool_status[6:])}</p>'
     return f"""
-    <section class="panel{' panel-disabled' if count == 0 else ''}">
+    <section class="panel{' panel-disabled' if tool_status == 'not_found' else ''}">
       <div class="panel-header">
-        <h2>{html.escape(title)} {count_badge}</h2>
+        <h2>{html.escape(title)} {count_badge}{status_badge}</h2>
         <p class="panel-sub">{html.escape(subtitle)}</p>
+        {not_installed_note}
       </div>
       <table>
         <thead>
@@ -113,18 +130,19 @@ def render_report_page(report_id: str, source: str, report) -> str:
         for c in report.controls
     )
 
+    tool_status = getattr(report, "tool_status", {})
     internal_panel = _findings_panel(
         "Internal rules", f"{RULE_COUNT} built-in security & hygiene rules", internal
     )
     semgrep_panel = _findings_panel(
         "Semgrep", "Static analysis via Semgrep auto config",
         semgrep,
-        "semgrep" if semgrep else "",
+        tool_status.get("semgrep", ""),
     )
     trivy_panel = _findings_panel(
         "Trivy", "CVE, secrets and IaC misconfigurations via Trivy fs",
         trivy,
-        "trivy" if trivy else "",
+        tool_status.get("trivy", ""),
     )
 
     return f"""<!doctype html>
@@ -274,6 +292,8 @@ def render_report_page(report_id: str, source: str, report) -> str:
     }}
     .pill-tool {{ background: #f0e8ff; color: #6d28d9; }}
     .tools-used {{ margin-top: 10px; font-size: 0.9rem; color: var(--muted); }}
+    .panel-note {{ margin-top: 8px; font-size: 0.88rem; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; }}
+    .panel-note-error {{ color: #991b1b; background: #fff1f2; border-color: #fca5a5; }}
     @media (max-width: 720px) {{
       .wrap {{ padding: 20px 14px 48px; }}
       .hero, .panel {{ border-radius: 18px; }}

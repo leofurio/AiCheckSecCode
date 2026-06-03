@@ -43,8 +43,9 @@ class RepoAuditor:
 
             external_findings: list = []
             tools_used: list[str] = []
+            tool_status: dict[str, str] = {}
             if self.config.use_external_tools:
-                external_findings, tools_used = run_external_tools(repo_path)
+                external_findings, tools_used, tool_status = run_external_tools(repo_path)
                 findings = findings + external_findings
 
             controls = _build_control_results(_find_findings_by_rule(findings))
@@ -57,6 +58,7 @@ class RepoAuditor:
                 findings=sorted(findings, key=lambda item: (_severity_rank(item.severity), item.rule_id, item.path or ""), reverse=True),
                 controls=controls,
                 tools_used=tools_used,
+                tool_status=tool_status,
             )
 
 
