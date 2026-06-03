@@ -133,10 +133,20 @@ def _ensure_trivy() -> str | None:
 
 def _semgrep_cmd() -> list[str] | None:
     """Return the command prefix to invoke semgrep, or None if not available."""
+    import sys
+
+    # 1. semgrep on system PATH
     if shutil.which("semgrep"):
         return ["semgrep"]
-    # Installed as a Python package but not on PATH (e.g. inside a venv)
-    import sys
+
+    # 2. semgrep binary next to the current Python executable (pip-installed venv/Vercel)
+    python_bin_dir = Path(sys.executable).parent
+    for name in ("semgrep", "semgrep.exe"):
+        candidate = python_bin_dir / name
+        if candidate.exists():
+            return [str(candidate)]
+
+    # 3. python -m semgrep fallback (module installed but script not on PATH)
     try:
         r = subprocess.run(
             [sys.executable, "-m", "semgrep", "--version"],
