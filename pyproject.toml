@@ -30,9 +30,6 @@ where = ["src"]
 [project.optional-dependencies]
 web = ["flask>=3.0.0"]
 
-[tool.vercel]
-entrypoint = "api/app.py"
-
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
