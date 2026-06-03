@@ -30,6 +30,7 @@ class Finding:
     line: int | None = None
     message: str = ""
     recommendation: str = ""
+    source: str = "internal"   # "internal" | "semgrep" | "trivy"
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
