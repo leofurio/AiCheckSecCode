@@ -57,6 +57,11 @@ class AuditWebApp:
 
 
 def render_report_page(report_id: str, source: str, report) -> str:
+    tools_html = ""
+    if report.tools_used:
+        badges = " ".join(f'<span class="pill pill-tool">{html.escape(t)}</span>' for t in report.tools_used)
+        tools_html = f'<p class="tools-used">Analizzato anche con: {badges}</p>'
+
     controls_rows = "\n".join(
         f"<tr><td>{html.escape(control.rule_id)}</td><td>{html.escape(control.category)}</td><td>{html.escape(control.severity.value)}</td><td>{html.escape(control.title)}</td><td>{html.escape(control.status)}</td><td>{control.findings_count}</td></tr>"
         for control in report.controls
@@ -166,6 +171,15 @@ def render_report_page(report_id: str, source: str, report) -> str:
       color: var(--accent);
       font-size: 0.85rem;
     }}
+    .pill-tool {{
+      background: #f0e8ff;
+      color: #6d28d9;
+    }}
+    .tools-used {{
+      margin-top: 12px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }}
     .danger {{ color: var(--danger); }}
     form {{
       display: grid;
@@ -197,6 +211,7 @@ def render_report_page(report_id: str, source: str, report) -> str:
       <span class="pill">Local web report &middot; v{html.escape(__version__)} &middot; {RULE_COUNT} rules</span>
       <h1>Repository audit completed</h1>
       <p>Source: {html.escape(source)}</p>
+      {tools_html}
       <div class="stats">
         <div class="stat"><strong>{report.score}</strong>Score</div>
         <div class="stat"><strong>{report.stats.files_scanned}</strong>Files scanned</div>

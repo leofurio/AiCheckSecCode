@@ -85,12 +85,14 @@ class AuditReport:
     stats: RepoStats
     findings: list[Finding]
     controls: list[ControlResult] = field(default_factory=list)
+    tools_used: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "repository": self.repository,
             "source": self.source,
             "score": self.score,
+            "tools_used": self.tools_used,
             "stats": self.stats.to_dict(),
             "controls": [control.to_dict() for control in self.controls],
             "findings": [finding.to_dict() for finding in self.findings],
