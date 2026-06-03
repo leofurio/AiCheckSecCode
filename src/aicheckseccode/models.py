@@ -87,6 +87,7 @@ class AuditReport:
     findings: list[Finding]
     controls: list[ControlResult] = field(default_factory=list)
     tools_used: list[str] = field(default_factory=list)
+    tool_status: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {

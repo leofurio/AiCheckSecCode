@@ -131,20 +131,40 @@ def _ensure_trivy() -> str | None:
 # Semgrep
 # ---------------------------------------------------------------------------
 
-def run_semgrep(root: Path) -> list[Finding]:
-    """Run semgrep on *root* and return findings. Returns [] if semgrep is not installed."""
-    if not shutil.which("semgrep"):
-        return []
-    result = subprocess.run(
-        ["semgrep", "scan", "--config", "auto", "--json", "--quiet", str(root)],
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+def _semgrep_cmd() -> list[str] | None:
+    """Return the command prefix to invoke semgrep, or None if not available."""
+    if shutil.which("semgrep"):
+        return ["semgrep"]
+    # Installed as a Python package but not on PATH (e.g. inside a venv)
+    import sys
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "semgrep", "--version"],
+            capture_output=True, timeout=10,
+        )
+        return [sys.executable, "-m", "semgrep"]
+    except Exception:
+        return None
+
+
+def run_semgrep(root: Path) -> tuple[list[Finding], str]:
+    """Run semgrep on *root*. Returns (findings, status) where status is 'ok', 'not_found', or 'error:<msg>'."""
+    cmd_prefix = _semgrep_cmd()
+    if cmd_prefix is None:
+        return [], "not_found"
+    try:
+        result = subprocess.run(
+            cmd_prefix + ["scan", "--config", "auto", "--json", "--quiet", str(root)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except Exception as exc:
+        return [], f"error:{exc}"
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
-        return []
+        return [], f"error:invalid JSON output"
 
     findings: list[Finding] = []
     for hit in data.get("results", []):
@@ -175,20 +195,21 @@ def run_semgrep(root: Path) -> list[Finding]:
                 source="semgrep",
             )
         )
-    return findings
+    return findings, "ok"
 
 
 # ---------------------------------------------------------------------------
 # Trivy
 # ---------------------------------------------------------------------------
 
-def run_trivy(root: Path) -> list[Finding]:
-    """Run trivy fs on *root*, auto-downloading the binary if needed."""
+def run_trivy(root: Path) -> tuple[list[Finding], str]:
+    """Run trivy fs on *root*, auto-downloading the binary if needed. Returns (findings, status)."""
     trivy_bin = _ensure_trivy()
     if not trivy_bin:
-        return []
+        return [], "not_found"
 
-    result = subprocess.run(
+    try:
+        result = subprocess.run(
         [
             trivy_bin, "fs",
             "--scanners", "vuln,secret,misconfig",
@@ -196,14 +217,16 @@ def run_trivy(root: Path) -> list[Finding]:
             "--quiet",
             str(root),
         ],
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except Exception as exc:
+        return [], f"error:{exc}"
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
-        return []
+        return [], "error:invalid JSON output"
 
     findings: list[Finding] = []
     for result_entry in data.get("Results", []):
@@ -260,26 +283,32 @@ def run_trivy(root: Path) -> list[Finding]:
                 )
             )
 
-    return findings
+    return findings, "ok"
 
 
 # ---------------------------------------------------------------------------
 # Unified runner
 # ---------------------------------------------------------------------------
 
-def run_external_tools(root: Path) -> tuple[list[Finding], list[str]]:
-    """Run all available external tools and return (findings, tool_names_used)."""
+def run_external_tools(root: Path) -> tuple[list[Finding], list[str], dict[str, str]]:
+    """Run all available external tools. Returns (findings, tool_names_used, tool_status).
+
+    tool_status maps tool name -> 'ok' | 'not_found' | 'error:<msg>'
+    """
     findings: list[Finding] = []
     tools_used: list[str] = []
+    tool_status: dict[str, str] = {}
 
-    semgrep = run_semgrep(root)
-    if semgrep or shutil.which("semgrep"):
-        findings.extend(semgrep)
+    semgrep_findings, semgrep_status = run_semgrep(root)
+    tool_status["semgrep"] = semgrep_status
+    if semgrep_status != "not_found":
+        findings.extend(semgrep_findings)
         tools_used.append("Semgrep")
 
-    trivy = run_trivy(root)
-    if trivy or _ensure_trivy():
-        findings.extend(trivy)
+    trivy_findings, trivy_status = run_trivy(root)
+    tool_status["trivy"] = trivy_status
+    if trivy_status != "not_found":
+        findings.extend(trivy_findings)
         tools_used.append("Trivy")
 
-    return findings, tools_used
+    return findings, tools_used, tool_status
