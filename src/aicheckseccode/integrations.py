@@ -138,13 +138,15 @@ def _semgrep_cmd() -> list[str] | None:
     # Installed as a Python package but not on PATH (e.g. inside a venv)
     import sys
     try:
-        subprocess.run(
+        r = subprocess.run(
             [sys.executable, "-m", "semgrep", "--version"],
             capture_output=True, timeout=10,
         )
-        return [sys.executable, "-m", "semgrep"]
+        if r.returncode == 0:
+            return [sys.executable, "-m", "semgrep"]
     except Exception:
-        return None
+        pass
+    return None
 
 
 def run_semgrep(root: Path) -> tuple[list[Finding], str]:
