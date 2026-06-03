@@ -172,6 +172,7 @@ def run_semgrep(root: Path) -> list[Finding]:
                 line=hit.get("start", {}).get("line"),
                 message=extra.get("message", ""),
                 recommendation=metadata.get("fix", metadata.get("references", [""])[0] if metadata.get("references") else ""),
+                source="semgrep",
             )
         )
     return findings
@@ -224,6 +225,7 @@ def run_trivy(root: Path) -> list[Finding]:
                     path=target,
                     message=vuln.get("Description", vuln.get("Title", ""))[:300],
                     recommendation=f"Upgrade {pkg} to {fixed}." if fixed != "no fix available" else "No fix available yet; monitor the advisory.",
+                    source="trivy",
                 )
             )
 
@@ -238,6 +240,7 @@ def run_trivy(root: Path) -> list[Finding]:
                     line=secret.get("StartLine"),
                     message=f"Secret pattern matched: {secret.get('RuleID', '')}",
                     recommendation="Rotate the credential and load secrets from a secret manager.",
+                    source="trivy",
                 )
             )
 
@@ -253,6 +256,7 @@ def run_trivy(root: Path) -> list[Finding]:
                     path=target,
                     message=mis.get("Description", ""),
                     recommendation=mis.get("Resolution", ""),
+                    source="trivy",
                 )
             )
 
