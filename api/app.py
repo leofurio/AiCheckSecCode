@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
-import io
 import json
+import sys
 import tempfile
 from pathlib import Path
 
-from flask import Flask, Response, redirect, render_template_string, request, send_file
+# Make the src/ package importable without an installed wheel
+_src = Path(__file__).parent.parent / "src"
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
 
-from aicheckseccode.auditor import AuditConfig, RepoAuditor
-from aicheckseccode.excel import write_excel_report
-from aicheckseccode.git import GitCloneError
-from aicheckseccode.web import render_index, render_report_page
+from flask import Flask, Response, request, send_file  # noqa: E402
+
+from aicheckseccode.auditor import AuditConfig, RepoAuditor  # noqa: E402
+from aicheckseccode.excel import write_excel_report  # noqa: E402
+from aicheckseccode.git import GitCloneError  # noqa: E402
+from aicheckseccode.web import render_index, render_report_page  # noqa: E402
 
 app = Flask(__name__)
 
