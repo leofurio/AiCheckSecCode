@@ -88,8 +88,10 @@ def _findings_panel(title: str, subtitle: str, findings: list, tool_status: str 
     status_badge = f" {_tool_status_badge(tool_status)}" if tool_status else ""
     not_installed_note = ""
     if tool_status == "not_found":
-        install_cmd = "pip install semgrep" if "emgrep" in title else "see https://aquasecurity.github.io/trivy"
-        not_installed_note = f'<p class="panel-note">Tool not available — install with: <code>{html.escape(install_cmd)}</code></p>'
+        if "emgrep" in title:
+            not_installed_note = '<p class="panel-note">Semgrep non disponibile in questo ambiente. Funziona solo in locale: <code>pip install semgrep</code></p>'
+        else:
+            not_installed_note = '<p class="panel-note">Trivy non disponibile in questo ambiente (download da GitHub bloccato su Vercel). Funziona solo in locale.</p>'
     elif tool_status.startswith("error:"):
         not_installed_note = f'<p class="panel-note panel-note-error">Scan error: {html.escape(tool_status[6:])}</p>'
     return f"""
