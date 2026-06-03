@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .crawler import CrawlOptions, RepositoryCrawler
 from .git import clone_repository
+from .integrations import run_external_tools
 from .models import AuditReport, ControlResult, RepoStats, Severity
 from .rules import RULE_CATALOG, RuleEngine
 
@@ -17,6 +18,7 @@ class AuditConfig:
 
     max_file_bytes: int = 1_000_000
     keep_clone_path: Path | None = None
+    use_external_tools: bool = True
 
 
 class RepoAuditor:
@@ -38,6 +40,13 @@ class RepoAuditor:
                     stats.add_file(crawled_file.relative_path, crawled_file.size)
 
             findings = self.rule_engine.run(repo_path, crawled_files)
+
+            external_findings: list = []
+            tools_used: list[str] = []
+            if self.config.use_external_tools:
+                external_findings, tools_used = run_external_tools(repo_path)
+                findings = findings + external_findings
+
             controls = _build_control_results(_find_findings_by_rule(findings))
             score = _score(findings)
             return AuditReport(
@@ -47,6 +56,7 @@ class RepoAuditor:
                 stats=stats,
                 findings=sorted(findings, key=lambda item: (_severity_rank(item.severity), item.rule_id, item.path or ""), reverse=True),
                 controls=controls,
+                tools_used=tools_used,
             )
 
 
