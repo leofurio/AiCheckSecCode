@@ -19,6 +19,7 @@ classifiers = [
   "Topic :: Security",
   "Topic :: Software Development :: Quality Assurance",
 ]
+dependencies = ["semgrep>=1.70.0"]
 
 [project.scripts]
 aicheckseccode = "aicheckseccode.cli:main"
