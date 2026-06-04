@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aicheckseccode"
-version = "0.1.0"
+version = "0.2.0"
 description = "Crawler CLI that audits Git repositories for security and hygiene quality signals."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,6 +19,7 @@ classifiers = [
   "Topic :: Security",
   "Topic :: Software Development :: Quality Assurance",
 ]
+dependencies = ["semgrep>=1.70.0"]
 
 [project.scripts]
 aicheckseccode = "aicheckseccode.cli:main"
@@ -26,6 +27,9 @@ aicheckseccode-web = "aicheckseccode.web:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.optional-dependencies]
+web = ["flask>=3.0.0"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

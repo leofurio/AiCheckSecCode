@@ -24,7 +24,10 @@ def write_excel_report(report: AuditReport, destination: Path) -> Path:
     sheets = [
         ("Summary", _summary_rows(report)),
         ("Controls", _control_rows(report)),
-        ("Findings", _finding_rows(report)),
+        ("All Findings", _finding_rows(report, source_filter=None)),
+        ("Internal Rules", _finding_rows(report, source_filter="internal")),
+        ("Semgrep", _finding_rows(report, source_filter="semgrep")),
+        ("Trivy", _finding_rows(report, source_filter="trivy")),
         ("Stats", _stats_rows(report)),
     ]
 
@@ -42,7 +45,11 @@ def write_excel_report(report: AuditReport, destination: Path) -> Path:
 def _summary_rows(report: AuditReport) -> list[list[_CellValue]]:
     failed_controls = sum(1 for control in report.controls if control.status == "failed")
     passed_controls = sum(1 for control in report.controls if control.status == "passed")
-    return [
+    internal = [f for f in report.findings if f.source == "internal"]
+    semgrep  = [f for f in report.findings if f.source == "semgrep"]
+    trivy    = [f for f in report.findings if f.source == "trivy"]
+    tool_status = getattr(report, "tool_status", {})
+    rows: list[list[_CellValue]] = [
         ["Metric", "Value"],
         ["Repository", report.repository],
         ["Source", report.source],
@@ -52,8 +59,16 @@ def _summary_rows(report: AuditReport) -> list[list[_CellValue]]:
         ["Total bytes", report.stats.total_bytes],
         ["Controls passed", passed_controls],
         ["Controls failed", failed_controls],
-        ["Findings", len(report.findings)],
+        ["Total findings", len(report.findings)],
+        ["Internal findings", len(internal)],
+        ["Semgrep findings", len(semgrep)],
+        ["Trivy findings", len(trivy)],
+        [],
+        ["Tool", "Status"],
+        ["Semgrep", tool_status.get("semgrep", "not_run")],
+        ["Trivy", tool_status.get("trivy", "not_run")],
     ]
+    return rows
 
 
 def _control_rows(report: AuditReport) -> list[list[_CellValue]]:
@@ -73,13 +88,15 @@ def _control_rows(report: AuditReport) -> list[list[_CellValue]]:
     return rows
 
 
-def _finding_rows(report: AuditReport) -> list[list[_CellValue]]:
+def _finding_rows(report: AuditReport, source_filter: str | None) -> list[list[_CellValue]]:
+    findings = report.findings if source_filter is None else [f for f in report.findings if f.source == source_filter]
     rows: list[list[_CellValue]] = [
-        ["Rule ID", "Category", "Severity", "Title", "Path", "Line", "Message", "Recommendation"]
+        ["Source", "Rule ID", "Category", "Severity", "Title", "Path", "Line", "Message", "Recommendation"]
     ]
-    for finding in report.findings:
+    for finding in findings:
         rows.append(
             [
+                finding.source,
                 finding.rule_id,
                 finding.category,
                 finding.severity.value,
