@@ -30,6 +30,7 @@ class Finding:
     line: int | None = None
     message: str = ""
     recommendation: str = ""
+    source: str = "internal"   # "internal" | "semgrep" | "trivy"
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -85,12 +86,15 @@ class AuditReport:
     stats: RepoStats
     findings: list[Finding]
     controls: list[ControlResult] = field(default_factory=list)
+    tools_used: list[str] = field(default_factory=list)
+    tool_status: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "repository": self.repository,
             "source": self.source,
             "score": self.score,
+            "tools_used": self.tools_used,
             "stats": self.stats.to_dict(),
             "controls": [control.to_dict() for control in self.controls],
             "findings": [finding.to_dict() for finding in self.findings],

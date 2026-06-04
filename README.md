@@ -30,48 +30,58 @@ Il progetto e pensato come base estendibile per controlli lightweight di code re
 ## Installazione in sviluppo
 
 ```bash
-python -m pip install -e .
+pip install -e .
 ```
+
+Semgrep viene installato come dipendenza diretta. Trivy viene scaricato automaticamente al primo utilizzo.
+
+---
 
 ## Uso CLI
 
 ```bash
+# Audit base
 aicheckseccode https://github.com/owner/repo.git
-```
 
-Output JSON:
-
-```bash
+# Output JSON
 aicheckseccode https://github.com/owner/repo.git --format json
-```
 
-Generazione del file Excel con elenco dettagliato dei controlli e risultati:
-
-```bash
+# Report Excel
 aicheckseccode https://github.com/owner/repo.git --excel report.xlsx
-```
 
-Uso in CI con soglia minima e artifact Excel:
-
-```bash
+# CI con soglia minima di score
 aicheckseccode https://github.com/owner/repo.git --fail-under 80 --excel report.xlsx
-```
 
-Scansione di una repository locale:
-
-```bash
+# Repository locale
 aicheckseccode /path/to/repository --format text
 ```
 
-## Uso Web
+---
 
-Avvia il server locale:
+## Uso Web
 
 ```bash
 aicheckseccode-web --host 127.0.0.1 --port 8000
 ```
 
-Poi apri `http://127.0.0.1:8000`, inserisci il path o l'URL Git del repository e scarica il report Excel generato dalla pagina.
+Apri `http://127.0.0.1:8000`, inserisci l'URL Git o il path locale e ottieni un report con quattro sezioni:
+
+1. **Controls** — stato di tutti i 76 controlli built-in (passed/failed)
+2. **Internal rules** — finding delle regole built-in
+3. **Semgrep** — finding dall'analisi statica Semgrep
+4. **Trivy** — CVE, segreti e misconfigurazioni IaC
+
+---
+
+## Deploy su Vercel
+
+```bash
+npx vercel --prod
+```
+
+Il progetto include `api/app.py` (Flask WSGI) e `vercel.json` pronti per il deploy. Trivy viene scaricato automaticamente al primo audit; i file Excel sono disponibili per il download nella stessa sessione.
+
+---
 
 
 ## Deploy su Vercel
@@ -95,11 +105,15 @@ Nota: i report scaricabili generati su Vercel vengono salvati nello storage temp
 
 ## Estendere le regole
 
-Le regole e il catalogo dei controlli esportati nel report Excel sono centralizzati in `src/aicheckseccode/rules.py`. Per aggiungere un nuovo controllo:
+Le regole sono in `src/aicheckseccode/rules.py`:
 
-1. aggiungi una funzione privata nella classe `RuleEngine` oppure un nuovo pattern;
-2. restituisci uno o piu oggetti `Finding`;
-3. copri il comportamento con test in `tests/`.
+1. Aggiungi un pattern in `_DANGEROUS_CODE_PATTERNS` o `_ENTERPRISE_SECURITY_PATTERNS`
+2. Aggiungi la voce corrispondente in `RULE_CATALOG`
+3. Scrivi un test in `tests/`
+
+Per integrare nuovi tool esterni, aggiungi una funzione in `src/aicheckseccode/integrations.py` che restituisce `list[Finding]` con `source="nometool"`.
+
+---
 
 ## Limiti
 
@@ -107,4 +121,4 @@ Le regole e il catalogo dei controlli esportati nel report Excel sono centralizz
 - Le soglie sulle versioni delle librerie sono curate e conservative: non sostituiscono un feed CVE/SCA aggiornato in tempo reale.
 - I segreti rilevati devono essere ruotati: rimuoverli dal codice non basta se sono gia entrati nella history Git.
 - La scansione non esegue codice del repository target.
-- Questa sessione non puo pubblicare automaticamente il servizio su Internet senza credenziali o accesso a un hosting.
+- Su Vercel, i file Excel/JSON nel download scadono al termine dell'istanza serverless — scaricarli subito dopo l'audit.
