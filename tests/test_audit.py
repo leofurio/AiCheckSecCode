@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 from pathlib import Path
@@ -10,7 +11,7 @@ from aicheckseccode.cli import main
 from aicheckseccode.excel import write_excel_report
 from aicheckseccode.formatters import format_json
 from aicheckseccode.git import clone_repository
-from aicheckseccode.web import AuditWebApp
+from aicheckseccode.web import AuditRequestHandler, AuditWebApp
 
 
 def write_file(path: Path, content: str) -> None:
@@ -175,3 +176,82 @@ def test_clone_repository_falls_back_when_system_temp_is_denied(tmp_path: Path, 
     assert calls[0] is None
     assert calls[1] == fallback_root
     assert cloned_destinations
+
+
+def test_enterprise_security_controls_detect_risky_code_and_container_config(tmp_path: Path) -> None:
+    write_file(
+        tmp_path / "app.py",
+        """import hashlib
+import os
+import yaml
+
+requests.get('https://example.com', verify=False)
+yaml.load(payload)
+hashlib.md5(payload).hexdigest()
+headers = {'Access-Control-Allow-Origin': '*'}
+os.system(user_command)
+""",
+    )
+    write_file(tmp_path / "Dockerfile", "FROM python:latest\nRUN curl https://example.com/install.sh | bash\n")
+
+    report = RepoAuditor().audit(str(tmp_path))
+
+    rule_ids = {finding.rule_id for finding in report.findings}
+    assert {"SEC007", "SEC008", "SEC009", "SEC010", "SEC011", "SEC012", "SEC013", "SEC014"}.issubset(rule_ids)
+
+
+def test_dependency_version_controls_detect_unpinned_and_legacy_dependencies(tmp_path: Path) -> None:
+    write_file(tmp_path / "requirements.txt", "requests==2.31.0\nflask>=2\n")
+    write_file(tmp_path / "package.json", '{"dependencies":{"lodash":"4.17.20","express":"^4.17.0"}}')
+
+    report = RepoAuditor().audit(str(tmp_path))
+
+    findings_by_rule = {finding.rule_id: finding for finding in report.findings}
+    assert "SEC005" in findings_by_rule
+    assert "SEC006" in findings_by_rule
+    assert any(finding.rule_id == "SEC006" and "requests" in finding.message for finding in report.findings)
+    assert any(finding.rule_id == "SEC006" and "lodash" in finding.message for finding in report.findings)
+
+
+def test_vercel_entrypoint_exposes_aicheckseccode_handler() -> None:
+    from api.index import handler
+
+    assert issubclass(handler, AuditRequestHandler)
+    assert isinstance(handler.app, AuditWebApp)
+
+
+def test_clone_repository_falls_back_to_github_archive_when_git_is_unavailable(tmp_path: Path, monkeypatch) -> None:
+    class FakeResponse:
+        def __init__(self, payload: bytes) -> None:
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return self.payload
+
+    archive_buffer = io.BytesIO()
+    with ZipFile(archive_buffer, "w") as archive:
+        archive.writestr("repo-main/README.md", "# Archive fallback\n")
+
+    def fake_run(command, check, capture_output, text, timeout):
+        raise FileNotFoundError("git")
+
+    def fake_urlopen(request, timeout):
+        url = request.full_url
+        if url == "https://api.github.com/repos/example/repo":
+            return FakeResponse(b'{"default_branch":"main"}')
+        if url == "https://codeload.github.com/example/repo/zip/refs/heads/main":
+            return FakeResponse(archive_buffer.getvalue())
+        raise AssertionError(url)
+
+    monkeypatch.setattr("aicheckseccode.git.subprocess.run", fake_run)
+    monkeypatch.setattr("aicheckseccode.git.urllib.request.urlopen", fake_urlopen)
+
+    with clone_repository("https://github.com/example/repo.git") as repo_path:
+        assert repo_path.name == "repo"
+        assert (repo_path / "README.md").read_text(encoding="utf-8") == "# Archive fallback\n"
